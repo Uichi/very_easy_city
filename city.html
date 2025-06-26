@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ミニ都市シミュレーター</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #e0f7fa;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .game-container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 100%;
+            max-width: 600px;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            color: #00796b;
+            margin-bottom: 15px;
+        }
+
+        #grid-container {
+            display: grid;
+            grid-template-columns: repeat(10, 30px); /* 10x10のマス目 */
+            grid-template-rows: repeat(10, 30px);
+            gap: 2px;
+            border: 2px solid #004d40;
+            margin: 20px auto;
+            width: fit-content;
+        }
+
+        .cell {
+            width: 30px;
+            height: 30px;
+            border: 1px solid #e0f2f7;
+            cursor: pointer;
+            transition: background-color 0.1s ease;
+            /* 背景画像関連のプロパティ */
+            background-size: cover; /* マス目に合わせて画像を拡大縮小 */
+            background-position: center; /* 画像を中央に配置 */
+            background-repeat: no-repeat; /* 画像を繰り返さない */
+        }
+
+        /* 各タイプの色を定義 */
+        .cell.empty { background-color: #a7ffeb; /* 空地 (薄い水色) */ }
+        .cell.residential {
+            background-color: #ffcc80; /* 住宅 (オレンジ系) */
+            background-image: url(house.png); 
+        }
+        .cell.commercial {
+        background-color: #80deea; /* 商業 (水色系) */
+        background-image: url('shop.png'); /* ★ ここに追加 ★ */
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+}
+        .cell.industrial {
+        background-color: #c5e1a5; /* 工業 (黄緑系) */
+        background-image: url('factory.png'); /* ★ ここに追加 ★ */
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+}
+        .cell.road { background-color: #7f8c8d; /* 道路 (灰色) */ }
+
+        #stats-container {
+            margin-top: 20px;
+            display: flex;
+            justify-content: space-around;
+            gap: 10px;
+        }
+
+        .stat-item {
+            padding: 10px 15px;
+            background-color: #e0f2f7;
+            border-radius: 8px;
+            font-size: 0.9em;
+            flex: 1;
+        }
+        .stat-item strong {
+            display: block;
+            font-size: 1.2em;
+            color: #00796b;
+        }
+
+        #happiness-message {
+            margin-top: 20px;
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #333;
+            min-height: 1.5em;
+        }
+
+        #reset-button {
+            background-color: #f44336;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            margin-top: 20px;
+        }
+
+        #reset-button:hover {
+            background-color: #d32f2f;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>ミニ都市シミュレーター</h1>
+        <p>マス目をクリックして，都市を開発しよう．</p>
+        <p>クリックするごとに「空地 → 住宅 → 商業 → 工業 → 道路 → 空地」と変化する．</p>
+
+        <div id="grid-container">
+            </div>
+
+        <div id="stats-container">
+            <div class="stat-item">
+                住宅: <strong id="res-count">0</strong>
+            </div>
+            <div class="stat-item">
+                商業: <strong id="com-count">0</strong>
+            </div>
+            <div class="stat-item">
+                工業: <strong id="ind-count">0</strong>
+            </div>
+            <div class="stat-item">
+                道路: <strong id="road-count">0</strong>
+            </div>
+        </div>
+
+        <p id="happiness-message">都市の幸福度: Calculating...</p>
+        <button id="reset-button">リセット</button>
+    </div>
+
+    <script>
+        // ゲーム設定
+        const GRID_SIZE = 10; // 10x10のマス目
+        const CELL_TYPES = ['empty', 'residential', 'commercial', 'industrial', 'road']; 
+
+        // DOM要素の取得
+        const gridContainer = document.getElementById('grid-container');
+        const resCountDisplay = document.getElementById('res-count');
+        const comCountDisplay = document.getElementById('com-count');
+        const indCountDisplay = document.getElementById('ind-count');
+        const roadCountDisplay = document.getElementById('road-count');
+        const happinessMessage = document.getElementById('happiness-message');
+        const resetButton = document.getElementById('reset-button');
+
+        // 都市のデータ構造
+        let cityGrid = []; // マス目の状態を保持する二次元配列
+
+        // --- ゲームの初期化 ---
+        function initializeGame() {
+            gridContainer.innerHTML = ''; // 既存のマス目をクリア
+            cityGrid = []; // グリッドデータをリセット
+
+            for (let r = 0; r < GRID_SIZE; r++) {
+                cityGrid[r] = [];
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    // 各セルを初期状態（空地）として設定
+                    cityGrid[r][c] = 'empty';
+
+                    // HTML要素としてのマス目を作成
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    cell.classList.add('empty'); // 初期クラスとして'empty'を追加
+                    cell.dataset.row = r; // 行情報をデータ属性として保持
+                    cell.dataset.col = c; // 列情報をデータ属性として保持
+                    
+                    // クリックイベントリスナーを設定
+                    cell.addEventListener('click', handleCellClick);
+                    gridContainer.appendChild(cell);
+                }
+            }
+            updateStats(); // 初期統計情報を更新
+        }
+
+        // --- マス目クリック時の処理 ---
+        function handleCellClick(event) {
+            const cell = event.target;
+            const row = parseInt(cell.dataset.row);
+            const col = parseInt(cell.dataset.col);
+
+            // 現在のセルのタイプを取得し、次のタイプに切り替える
+            const currentType = cityGrid[row][col];
+            const currentTypeIndex = CELL_TYPES.indexOf(currentType);
+            const nextTypeIndex = (currentTypeIndex + 1) % CELL_TYPES.length;
+            const nextType = CELL_TYPES[nextTypeIndex];
+
+            // 内部データとCSSクラスを更新
+            cityGrid[row][col] = nextType;
+            
+            // 古いタイプクラスを削除し、新しいタイプクラスを追加する
+            cell.classList.remove(currentType);
+            cell.classList.add(nextType);
+
+            updateStats(); // 統計情報を再計算して表示を更新
+        }
+
+        // --- 統計情報の更新 ---
+        function updateStats() {
+            let resCount = 0;
+            let comCount = 0;
+            let indCount = 0;
+            let roadCount = 0;
+
+            // 各タイプのマス目の数を数える
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    const type = cityGrid[r][c];
+                    if (type === 'residential') resCount++;
+                    else if (type === 'commercial') comCount++;
+                    else if (type === 'industrial') indCount++;
+                    else if (type === 'road') roadCount++;
+                }
+            }
+
+            // 表示を更新
+            resCountDisplay.textContent = resCount;
+            comCountDisplay.textContent = comCount;
+            indCountDisplay.textContent = indCount;
+            roadCountDisplay.textContent = roadCount;
+
+            // 幸福度を計算して表示
+            calculateHappiness(resCount, comCount, indCount, roadCount);
+        }
+
+        // --- 幸福度の計算と表示 ---
+        function calculateHappiness(res, com, ind, road) {
+            let happiness = 50; // 基本幸福度
+
+            // 住宅が多いほど基本幸福度は上がるが、単体では限界がある
+            happiness += Math.min(res * 2, 40);
+
+            // 商業施設がある程度あると幸福度アップ
+            if (com > res * 0.2 && com < res * 0.8) {
+                happiness += 20;
+            } else if (com > res) {
+                happiness -= 10;
+            }
+
+            // 工業施設が少ないと不満、多すぎると公害で不満
+            if (ind > res * 0.1 && ind < res * 0.4) {
+                happiness += 15;
+            } else if (ind > res * 0.5) {
+                happiness -= 25;
+            } else if (ind < 5 && res > 0) {
+                happiness -= 10;
+            }
+
+            // 道路に関する幸福度ロジック
+            if (road > 0) {
+                happiness += 5;
+                if (road > (res + com + ind) * 0.1 && road < (res + com + ind) * 0.3) {
+                    happiness += 10;
+                } else if (road >= (res + com + ind) * 0.5) {
+                    happiness -= 10;
+                }
+            } else if (res + com + ind > 0) {
+                happiness -= 15;
+            }
+
+            // 総マス数のバランスも考慮 (例: 10x10 = 100マス)
+            const totalBuilt = res + com + ind + road;
+            if (totalBuilt > GRID_SIZE * GRID_SIZE * 0.8 && (res === 0 || com === 0 || ind === 0)) {
+                happiness -= 20;
+            } else if (totalBuilt === 0 && GRID_SIZE * GRID_SIZE > 0) {
+                 happiness = 0;
+            }
+
+
+            // 幸福度を100に丸める
+            happiness = Math.max(0, Math.min(100, happiness));
+
+            let message = '';
+            if (happiness >= 80) {
+                message = `✨ 大変幸福だ！ (${happiness}%)`;
+                happinessMessage.style.color = '#2e7d32';
+            } else if (happiness >= 60) {
+                message = `😊 幸福だ． (${happiness}%)`;
+                happinessMessage.style.color = '#388e3c';
+            } else if (happiness >= 40) {
+                message = `😐 普通だ． (${happiness}%)`;
+                happinessMessage.style.color = '#ffa000';
+            } else if (happiness >= 20) {
+                message = `😟 不満が多い． (${happiness}%)`;
+                happinessMessage.style.color = '#f44336';
+            } else {
+                message = `💀 絶望的だ． (${happiness}%)`;
+                happinessMessage.style.color = '#b71c1c';
+            }
+            happinessMessage.textContent = `都市の幸福度: ${message}`;
+        }
+
+        // --- リセットボタンのイベントリスナー ---
+        resetButton.addEventListener('click', initializeGame);
+
+        // --- ゲーム開始 ---
+        initializeGame();
+    </script>
+</body>
+</html>
